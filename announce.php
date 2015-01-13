@@ -17,32 +17,7 @@
 * along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
- /*************************
- ** Configuration start **
- *************************/
-
-//MySQL details
-define('__DB_SERVER', '');
-define('__DB_USERNAME', '');
-define('__DB_PASSWORD', '');
-define('__DB_DATABASE', '');
-
-//Peer announce interval (Seconds)
-define('__INTERVAL', 1800);
-
-//Time out if peer is this late to re-announce (Seconds)
-define('__TIMEOUT', 120);
-
-//Minimum announce interval (Seconds)
-//Most clients obey this, but not all
-define('__INTERVAL_MIN', 60);
-
-// By default, never encode more than this number of peers in a single request
-define('__MAX_PPR', 20);
-
- /***********************
- ** Configuration end **
- ***********************/
+require('_config.php');
 
 //Use the correct content-type
 header("Content-type: Text/Plain");
@@ -195,12 +170,3 @@ function valdata($g, $fixed_size=false) {
 		die(track('Request too long'));
 	}
 }
-
-function hex2bin($hex) {
-	$r = '';
-	for ($i=0; $i < strlen($hex); $i+=2) {
-		$r .= chr(hexdec($hex{$i}.$hex{($i+1)}));
-	}
-	return $r;
-}
-?>

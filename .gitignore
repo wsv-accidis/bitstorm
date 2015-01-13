@@ -1,0 +1,5 @@
+# Config file, should not be checked into VCS
+_config.php
+
+# IntelliJ project dir
+.idea
