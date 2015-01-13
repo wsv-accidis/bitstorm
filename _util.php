@@ -18,6 +18,21 @@
 	 * along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	 */
 
+	function isWhitelisted($infoHash) {
+		global $_whiteList;
+		if(!is_array($_whiteList) || 0 == count($_whiteList)) {
+			die(trackError('Tracker will not accept any torrents'));
+		}
+
+		$infoHash = bin2hex($infoHash);
+		foreach($_whiteList as $whiteListed) {
+			if(0 == strcasecmp($infoHash, $whiteListed)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	function trackError($error) {
 		return 'd14:failure reason' . strlen($error) . ':' . $error . 'e';
 	}

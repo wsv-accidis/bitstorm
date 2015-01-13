@@ -35,6 +35,10 @@
 	$numWant = validateInt('numwant', true);
 	$noPeerId = isset($_GET['no_peer_id']);
 
+	if(__WHITELIST_ENABLED && !isWhitelisted($infoHash)) {
+		die(trackError('Torrent not allowed on this tracker'));
+	}
+
 	$peerPk = dbUpdatePeer($peerId, $_SERVER['HTTP_USER_AGENT'], $_SERVER['REMOTE_ADDR'], $key, $port);
 	$torrentPk = dbUpdateTorrent($infoHash);
 	$peerTorrentPk = dbUpdatePeerTorrent($peerPk, $uploaded, $downloaded, $left, $infoHash);

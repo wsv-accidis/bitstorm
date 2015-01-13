@@ -20,6 +20,13 @@ define('__INTERVAL_MIN', 60);
 define('__MAX_PPR', 20);
 
 /*
+ * Whitelisting
+ */
+define('__WHITELIST_ENABLED', false);
+// Each element is an infohash of the torrent, in hexadecimal format
+$_whiteList = array();
+
+/*
  * PHP error reporting (for debugging)
  */
 //ini_set('display_errors',1);
