@@ -1,102 +1,140 @@
 <?php
-/*
- * Bitstorm 2 - A small and fast BitTorrent tracker
- * Copyright 2011 Peter Caprioli
- * Copyright 2015 Wilhelm Svenselius
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*/
+	/*
+	 * Bitstorm 2 - A small and fast BitTorrent tracker
+	 * Copyright 2011 Peter Caprioli
+	 * Copyright 2015 Wilhelm Svenselius
+	 *
+	 * This program is free software: you can redistribute it and/or modify
+	 * it under the terms of the GNU General Public License as published by
+	 * the Free Software Foundation, either version 3 of the License, or
+	 * (at your option) any later version.
+	 *
+	 * This program is distributed in the hope that it will be useful,
+	 * but WITHOUT ANY WARRANTY; without even the implied warranty of
+	 * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+	 * GNU General Public License for more details.
+	 *
+	 * You should have received a copy of the GNU General Public License
+	 * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+	 */
 
-function connect() {
-    //Connect to the MySQL server
-    @mysql_connect(__DB_SERVER, __DB_USERNAME, __DB_PASSWORD) or die(track('Database connection failed'));
+	/** @var mysqli $_sql */
+	$_sql = null;
 
-    //Select the database
-    @mysql_select_db(__DB_DATABASE) or die(track('Unable to select database'));
-}
+	function dbConnect() {
+		global $_sql;
+		$_sql = new mysqli(__DB_SERVER, __DB_USERNAME, __DB_PASSWORD, __DB_DATABASE);
+		if($_sql->connect_errno) {
+			die(trackError('Database connection failed'));
+		}
+	}
 
-function update_peer() {
-    mysql_query('INSERT INTO `peer` (`hash`, `user_agent`, `ip_address`, `key`, `port`) '
-        . "VALUES ('" . mysql_real_escape_string(bin2hex($_GET['peer_id'])) . "', '" . mysql_real_escape_string(substr($_SERVER['HTTP_USER_AGENT'], 0, 80))
-        . "', INET_ATON('" . mysql_real_escape_string($_SERVER['REMOTE_ADDR']) . "'), '" . mysql_real_escape_string(sha1($_GET['key'])) . "', " . intval($_GET['port']) . ") "
-        . 'ON DUPLICATE KEY UPDATE `user_agent` = VALUES(`user_agent`), `ip_address` = VALUES(`ip_address`), `port` = VALUES(`port`), `id` = LAST_INSERT_ID(`peer`.`id`)')
-    or die(track('Cannot update peer: ' . mysql_error()));
-    $pk_peer = mysql_insert_id();
-    return $pk_peer;
-}
+	function dbUpdatePeer($peerId, $userAgent, $ipAddress, $key, $port) {
+		global $_sql;
+		$insert = $_sql->prepare('INSERT INTO bit_peer ( hash, user_agent, ip_address, key_hash, port ) VALUES ( ?, ?, ?, ?, ? ) '
+			. 'ON DUPLICATE KEY UPDATE user_agent = VALUES(user_agent), ip_address = VALUES(ip_address), port = VALUES(port), id = LAST_INSERT_ID(id)');
 
-function update_torrent() {
-    mysql_query("INSERT INTO `torrent` (`hash`) VALUES ('" . mysql_real_escape_string(bin2hex($_GET['info_hash'])) . "') "
-        . "ON DUPLICATE KEY UPDATE `id` = LAST_INSERT_ID(`id`)") or die(track('Cannot update torrent' . mysql_error())); // ON DUPLICATE KEY UPDATE is just to make mysql_insert_id work
-    $pk_torrent = mysql_insert_id();
-    return $pk_torrent;
-}
+		if(NULL == $userAgent) {
+			$userAgent = 'N/A';
+		}
 
-function update_peer_torrent($pk_peer)
-{
-    mysql_query('INSERT INTO `peer_torrent` (`peer_id`, `torrent_id`, `uploaded`, `downloaded`, `left`, `last_updated`) '
-        . 'SELECT ' . $pk_peer . ', `torrent`.`id`, ' . intval($_GET['uploaded']) . ', ' . intval($_GET['downloaded']) . ', ' . intval($_GET['left']) . ', UTC_TIMESTAMP() '
-        . 'FROM `torrent` '
-        . "WHERE `torrent`.`hash` = '" . mysql_real_escape_string(bin2hex($_GET['info_hash'])) . "' "
-        . 'ON DUPLICATE KEY UPDATE `uploaded` = VALUES(`uploaded`), `downloaded` = VALUES(`downloaded`), `left` = VALUES(`left`), `last_updated` = VALUES(`last_updated`), '
-        . '`id` = LAST_INSERT_ID(`peer_torrent`.`id`)')
-    or die(track(mysql_error()));
-    $pk_peer_torrent = mysql_insert_id();
-    return $pk_peer_torrent;
-}
+		$peerId = bin2hex($peerId);
+		$userAgent = substr($userAgent, 0, 80);
+		$ipAddress = substr($ipAddress, 0, 40);
+		$key = sha1($key);
+		$insert->bind_param('ssssi', $peerId, $userAgent, $ipAddress, $key, $port);
 
-function stopped_peer($pk_peer_torrent)
-{
-    mysql_query("UPDATE `peer_torrent` SET `stopped` = TRUE WHERE `id` = " . $pk_peer_torrent) or die (track(mysql_error()));
-}
+		if(!$insert->execute()) {
+			die(trackError('Database failed when updating peer: ' . $insert->errno));
+		}
+		$insert->close();
 
-function get_peers($pk_torrent, $pk_peer, $numwant)
-{
-    $q = mysql_query('SELECT INET_NTOA(peer.ip_address), peer.port, peer.hash '
-        . 'FROM peer_torrent '
-        . 'JOIN peer ON peer.id = peer_torrent.peer_id '
-        . 'WHERE peer_torrent.torrent_id = ' . $pk_torrent . ' AND peer_torrent.stopped = FALSE '
-        . 'AND peer_torrent.last_updated >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL ' . (__INTERVAL + __TIMEOUT) . ' SECOND) '
-        . 'AND peer.id != ' . $pk_peer . ' '
-        . 'ORDER BY RAND() '
-        . 'LIMIT ' . $numwant) or die(track(mysql_error()));
+		return $_sql->insert_id;
+	}
 
-    $reply = array(); //To be encoded and sent to the client
+	function dbUpdateTorrent($infoHash) {
+		global $_sql;
+		$insert = $_sql->prepare('INSERT INTO bit_torrent ( hash ) VALUES ( ? ) ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id)');
 
-    while ($r = mysql_fetch_array($q)) { //Runs for every client with the same infohash
-        $reply[] = array($r[0], $r[1], $r[2]); //ip, port, peerid
-    }
+		$infoHash = bin2hex($infoHash);
+		$insert->bind_param('s', $infoHash);
 
-    return $reply;
-}
+		if(!$insert->execute()) {
+			die(trackError('Database failed when updating torrent: ' . $insert->errno));
+		}
+		$insert->close();
 
-function get_counts($pk_torrent)
-{
-    $q = mysql_query('SELECT IFNULL(SUM(peer_torrent.left > 0), 0) AS leech, IFNULL(SUM(peer_torrent.left = 0), 0) AS seed '
-        . 'FROM peer_torrent '
-        . 'WHERE peer_torrent.torrent_id = ' . $pk_torrent . ' AND `peer_torrent`.`stopped` = FALSE '
-        . 'AND peer_torrent.last_updated >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL ' . (__INTERVAL + __TIMEOUT) . ' SECOND) '
-        . 'GROUP BY `peer_torrent`.`torrent_id`') or die(track(mysql_error()));
+		return $_sql->insert_id;
+	}
 
-    $seeders = 0;
-    $leechers = 0;
+	function dbUpdatePeerTorrent($peerPk, $uploaded, $downloaded, $remain, $infoHash) {
+		global $_sql;
+		$insert = $_sql->prepare('INSERT INTO bit_peer_torrent ( peer_id, torrent_id, uploaded, downloaded, remain, last_updated ) '
+			. 'SELECT ?, bit_torrent.id, ?, ?, ?, UTC_TIMESTAMP() FROM bit_torrent WHERE bit_torrent.hash = ? '
+			. 'ON DUPLICATE KEY UPDATE uploaded = VALUES(uploaded), downloaded = VALUES(downloaded), remain = VALUES(remain), last_updated = VALUES(last_updated), id = LAST_INSERT_ID(bit_peer_torrent.id)');
 
-    if ($r = mysql_fetch_array($q)) {
-        $seeders = $r[1];
-        $leechers = $r[0];
-        return array($seeders, $leechers);
-    }
+		$infoHash = bin2hex($infoHash);
+		$insert->bind_param('iiiis', $peerPk, $uploaded, $downloaded, $remain, $infoHash);
 
-    return array($seeders, $leechers);
-}
+		if(!$insert->execute()) {
+			die(trackError('Database failed when updating peers on torrent: ' . $insert->errno));
+		}
+		$insert->close();
+
+		return $_sql->insert_id;
+	}
+
+	function dbStoppedPeer($peerTorrentPk) {
+		global $_sql;
+		$update = $_sql->prepare('UPDATE bit_peer_torrent SET stopped = 1 WHERE id = ?');
+		$update->bind_param('i', $peerTorrentPk);
+
+		if(!$update->execute()) {
+			die(trackError('Database failed when updating peer on torrent: ' . $update->errno));
+		}
+		$update->close();
+	}
+
+	function dbGetPeers($torrentPk, $peerPk, $limit) {
+		global $_sql;
+		$select = $_sql->prepare('SELECT bit_peer.ip_address, bit_peer.port, bit_peer.hash FROM bit_peer_torrent '
+			. 'LEFT JOIN bit_peer ON bit_peer.id = bit_peer_torrent.peer_id '
+			. 'WHERE bit_peer_torrent.torrent_id = ? AND bit_peer_torrent.stopped = 0 '
+			. 'AND bit_peer_torrent.last_updated >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL ? SECOND) '
+			. 'AND bit_peer.id != ? '
+			. 'ORDER BY RAND() '
+			. 'LIMIT ?');
+
+		$interval = __INTERVAL + __TIMEOUT;
+		$select->bind_param('iiii', $torrentPk, $peerPk, $interval, $limit);
+
+		if(!$select->execute()) {
+			die(trackError('Database failed when getting peers: ' . $select->errno));
+		}
+		if(!($result = $select->get_result())) {
+			die(trackError('Database failed when getting peers: ' . $select->errno));
+		}
+
+		return $result->fetch_all();
+	}
+
+	function dbGetCounts($torrentPk) {
+		global $_sql;
+		$select = $_sql->prepare('SELECT IFNULL(SUM(remain > 0), 0) AS leech, IFNULL(SUM(remain = 0), 0) AS seed FROM bit_peer_torrent '
+			. 'WHERE bit_peer_torrent.torrent_id = ? AND bit_peer_torrent.stopped = 0 '
+			. 'AND bit_peer_torrent.last_updated >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL ? SECOND) '
+			. 'GROUP BY bit_peer_torrent.torrent_id');
+
+		$interval = __INTERVAL + __TIMEOUT;
+		$select->bind_param('ii', $torrentPk, $interval);
+
+		if(!$select->execute()) {
+			die(trackError('Database failed when getting counts: ' . $select->errno));
+		}
+
+		$seeders = 0;
+		$leechers = 0;
+		$select->bind_result($leechers, $seeders);
+		$select->fetch();
+		return array($seeders, $leechers);
+	}

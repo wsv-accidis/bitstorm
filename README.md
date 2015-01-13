@@ -3,7 +3,7 @@ Bitstorm
 This is a fork of the **Bitstorm** BitTorrent tracker originally by [Peter Caprioli](https://stormhub.org/tracker/ui.php)
 and with MySQL support originally implemented by [Josh Duff](https://code.google.com/p/bitstorm/).
 
-This version consists adds support for whitelisting of torrents, to prevent abuse of the tracker. I also rewrote
+This version adds support for whitelisting of torrents, to prevent abuse of the tracker. I also rewrote
 parts of the code to better suit my preferences, at the cost of some simplicity (it's no longer just one file).
 
 ## License
