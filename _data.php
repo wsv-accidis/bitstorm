@@ -106,7 +106,7 @@
 			. 'LIMIT ?');
 
 		$interval = __INTERVAL + __TIMEOUT;
-		$select->bind_param('iiii', $torrentPk, $peerPk, $interval, $limit);
+		$select->bind_param('iiii', $torrentPk, $interval, $peerPk, $limit);
 
 		if(!$select->execute()) {
 			die(trackError('Database failed when getting peers: ' . $select->errno));
